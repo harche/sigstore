@@ -19,7 +19,6 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
-	"crypto/mldsa"
 	"crypto/rsa"
 	"errors"
 	"fmt"
@@ -87,8 +86,9 @@ func LoadSignerWithOpts(privateKey crypto.PrivateKey, opts ...LoadOption) (Signe
 			return LoadED25519phSigner(pk)
 		}
 		return LoadED25519Signer(pk)
-	case *mldsa.PrivateKey:
-		return LoadMLDSASigner(pk)
+	}
+	if s, isMLDSA, err := mldsaSignerFor(privateKey); isMLDSA {
+		return s, err
 	}
 	return nil, fmt.Errorf("unsupported private key type: %T", privateKey)
 }

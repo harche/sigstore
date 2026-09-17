@@ -1,3 +1,5 @@
+//go:build go1.27
+
 //
 // Copyright 2026 The Sigstore Authors.
 //
@@ -23,8 +25,13 @@ import (
 	"fmt"
 	"io"
 
+	v1 "github.com/sigstore/protobuf-specs/gen/pb-go/common/v1"
 	"github.com/sigstore/sigstore/pkg/cryptoutils"
 )
+
+// ML-DSA support depends on crypto/mldsa, which was introduced in Go 1.27.
+// This file is only compiled with Go 1.27 or later; see mldsa_unsupported.go
+// for the behavior on older toolchains.
 
 var mldsaSupportedHashFuncs = []crypto.Hash{
 	crypto.Hash(0),
@@ -47,7 +54,7 @@ func validateMLDSAPrivateKey(priv *mldsa.PrivateKey) (err error) {
 			err = fmt.Errorf("key is invalid: %v", r)
 		}
 	}()
-	if _, valErr := cryptoutils.ValidateMLDSAPublicKey(priv.PublicKey()); valErr != nil {
+	if _, valErr := cryptoutils.MLDSAPublicKeyParameters(priv.PublicKey()); valErr != nil {
 		return valErr
 	}
 	return nil
@@ -138,7 +145,7 @@ func LoadMLDSAVerifier(pub *mldsa.PublicKey) (*MLDSAVerifier, error) {
 	if pub == nil {
 		return nil, errors.New("invalid ML-DSA public key specified")
 	}
-	if _, err := cryptoutils.ValidateMLDSAPublicKey(pub); err != nil {
+	if _, err := cryptoutils.MLDSAPublicKeyParameters(pub); err != nil {
 		return nil, fmt.Errorf("invalid ML-DSA public key specified: %w", err)
 	}
 
@@ -235,4 +242,99 @@ func NewMLDSASignerVerifier(params mldsa.Parameters) (*MLDSASignerVerifier, *mld
 // to this method are ignored.
 func (m MLDSASignerVerifier) PublicKey(_ ...PublicKeyOption) (crypto.PublicKey, error) {
 	return m.publicKey, nil
+}
+
+// mldsaAlgorithms are the ML-DSA entries of the algorithm registry. They are
+// only registered when built with Go 1.27 or later, which introduced crypto/mldsa.
+var mldsaAlgorithms = []AlgorithmDetails{
+	{v1.PublicKeyDetails_ML_DSA_44, MLDSA, crypto.Hash(0), v1.HashAlgorithm_HASH_ALGORITHM_UNSPECIFIED, mldsa.MLDSA44(), "mldsa-44"},
+	{v1.PublicKeyDetails_ML_DSA_65, MLDSA, crypto.Hash(0), v1.HashAlgorithm_HASH_ALGORITHM_UNSPECIFIED, mldsa.MLDSA65(), "mldsa-65"},
+	{v1.PublicKeyDetails_ML_DSA_87, MLDSA, crypto.Hash(0), v1.HashAlgorithm_HASH_ALGORITHM_UNSPECIFIED, mldsa.MLDSA87(), "mldsa-87"},
+}
+
+// GetMLDSAParameters returns the ML-DSA parameters for the algorithm details, if the key type is MLDSA.
+func (a AlgorithmDetails) GetMLDSAParameters() (mldsa.Parameters, error) {
+	if a.keyType != MLDSA {
+		return mldsa.Parameters{}, fmt.Errorf("unable to retrieve ML-DSA parameters for key type: %T", a.keyType)
+	}
+	params, ok := a.extraKeyParams.(mldsa.Parameters)
+	if !ok {
+		// This should be unreachable.
+		return mldsa.Parameters{}, fmt.Errorf("unable to retrieve parameters for ML-DSA, malformed algorithm details?: %T", a.keyType)
+	}
+	return params, nil
+}
+
+func (a AlgorithmDetails) checkMLDSAKey(pubKey crypto.PublicKey) (bool, error) {
+	mldsaKey, ok := pubKey.(*mldsa.PublicKey)
+	if !ok {
+		return false, nil
+	}
+	// Validate the ML-DSA key. If the key is a typed nil or uninitialized,
+	// return an error so the caller receives a meaningful diagnostic rather
+	// than a generic "unsupported algorithm" failure.
+	keyParams, err := cryptoutils.MLDSAPublicKeyParameters(mldsaKey)
+	if err != nil {
+		return false, err
+	}
+	params, err := a.GetMLDSAParameters()
+	if err != nil {
+		return false, err
+	}
+	return keyParams == params, nil
+}
+
+// mldsaDefaultPublicKeyDetails returns the default v1.PublicKeyDetails for an ML-DSA public key.
+// The boolean result reports whether publicKey is an ML-DSA key at all.
+func mldsaDefaultPublicKeyDetails(publicKey crypto.PublicKey) (v1.PublicKeyDetails, bool, error) {
+	pk, ok := publicKey.(*mldsa.PublicKey)
+	if !ok {
+		return v1.PublicKeyDetails_PUBLIC_KEY_DETAILS_UNSPECIFIED, false, nil
+	}
+	params, err := cryptoutils.MLDSAPublicKeyParameters(pk)
+	if err != nil {
+		return v1.PublicKeyDetails_PUBLIC_KEY_DETAILS_UNSPECIFIED, true, err
+	}
+	switch params {
+	case mldsa.MLDSA44():
+		return v1.PublicKeyDetails_ML_DSA_44, true, nil
+	case mldsa.MLDSA65():
+		return v1.PublicKeyDetails_ML_DSA_65, true, nil
+	case mldsa.MLDSA87():
+		return v1.PublicKeyDetails_ML_DSA_87, true, nil
+	}
+	return v1.PublicKeyDetails_PUBLIC_KEY_DETAILS_UNSPECIFIED, true, errors.New("unsupported public key type")
+}
+
+// mldsaSignerFor returns an MLDSASigner if privateKey is an ML-DSA private key.
+// The boolean result reports whether privateKey is an ML-DSA key at all.
+func mldsaSignerFor(privateKey crypto.PrivateKey) (Signer, bool, error) {
+	pk, ok := privateKey.(*mldsa.PrivateKey)
+	if !ok {
+		return nil, false, nil
+	}
+	s, err := LoadMLDSASigner(pk)
+	return s, true, err
+}
+
+// mldsaVerifierFor returns an MLDSAVerifier if publicKey is an ML-DSA public key.
+// The boolean result reports whether publicKey is an ML-DSA key at all.
+func mldsaVerifierFor(publicKey crypto.PublicKey) (Verifier, bool, error) {
+	pk, ok := publicKey.(*mldsa.PublicKey)
+	if !ok {
+		return nil, false, nil
+	}
+	v, err := LoadMLDSAVerifier(pk)
+	return v, true, err
+}
+
+// mldsaSignerVerifierFor returns an MLDSASignerVerifier if privateKey is an ML-DSA private key.
+// The boolean result reports whether privateKey is an ML-DSA key at all.
+func mldsaSignerVerifierFor(privateKey crypto.PrivateKey) (SignerVerifier, bool, error) {
+	pk, ok := privateKey.(*mldsa.PrivateKey)
+	if !ok {
+		return nil, false, nil
+	}
+	sv, err := LoadMLDSASignerVerifier(pk)
+	return sv, true, err
 }

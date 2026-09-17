@@ -19,7 +19,6 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
-	"crypto/mldsa"
 	"crypto/rsa"
 	"errors"
 	"fmt"
@@ -71,8 +70,9 @@ func LoadVerifierWithOpts(publicKey crypto.PublicKey, opts ...LoadOption) (Verif
 			return LoadED25519phVerifier(pk)
 		}
 		return LoadED25519Verifier(pk)
-	case *mldsa.PublicKey:
-		return LoadMLDSAVerifier(pk)
+	}
+	if v, isMLDSA, err := mldsaVerifierFor(publicKey); isMLDSA {
+		return v, err
 	}
 	return nil, fmt.Errorf("unsupported public key type: %T", publicKey)
 }
@@ -102,8 +102,9 @@ func LoadUnsafeVerifier(publicKey crypto.PublicKey) (Verifier, error) {
 		}, nil
 	case ed25519.PublicKey:
 		return LoadED25519Verifier(pk)
-	case *mldsa.PublicKey:
-		return LoadMLDSAVerifier(pk)
+	}
+	if v, isMLDSA, err := mldsaVerifierFor(publicKey); isMLDSA {
+		return v, err
 	}
 	return nil, fmt.Errorf("unsupported public key type: %T", publicKey)
 }

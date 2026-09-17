@@ -44,15 +44,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Get Go version directive from go.mod as major.minor
-        id: go_version
-        run: |
-          awk -F'[ .]' '/^go /{print "version=" $2 "." $3; exit}' go.mod >>"${GITHUB_OUTPUT}"
-
+      # Scan with the newest supported Go so that files gated behind
+      # "//go:build go1.27" (ML-DSA support) are included in the analysis.
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "${{ steps.go_version.outputs.version }}"
+          go-version: '1.27'
           check-latest: true
 
       # Initializes the CodeQL tools for scanning.

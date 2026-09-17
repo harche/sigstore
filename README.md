@@ -5,8 +5,15 @@ sigstore/sigstore contains common [Sigstore](https://www.sigstore.dev/) code: th
 
 This library currently provides:
 
-* A signing interface (support for ecdsa, ed25519, rsa, DSSE (in-toto))
+* A signing interface (support for ecdsa, ed25519, rsa, ML-DSA, DSSE (in-toto))
 * OpenID Connect fulcio client code
+
+ML-DSA support depends on `crypto/mldsa` and is only compiled with Go 1.27 or
+later. When built with an older Go, the ML-DSA types and functions in
+`pkg/signature` and `pkg/cryptoutils` are absent, the `ML_DSA_*` algorithms are
+not present in the algorithm registry (`GetAlgorithmDetails` returns an error
+for them), and ML-DSA keys are rejected as unsupported. Downstream code that
+references the ML-DSA API directly needs its own `//go:build go1.27` constraint.
 
 The following KMS systems are available:
 * AWS Key Management Service

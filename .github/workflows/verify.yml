@@ -72,9 +72,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Lint with the newest supported Go so that files gated behind
+      # "//go:build go1.27" (ML-DSA support) are included in the analysis.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: ${{ matrix.module }}/go.mod
+          go-version: '1.27'
           check-latest: true
           cache: false
       - name: golangci-lint

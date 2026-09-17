@@ -1,3 +1,5 @@
+//go:build go1.27
+
 //
 // Copyright 2026 The Sigstore Authors.
 //
